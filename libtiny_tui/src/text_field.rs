@@ -94,7 +94,6 @@ impl TextField {
                 ref completions,
                 current_completion,
             } => {
-
                 let cursor_line = self.cursor / self.width;
                 let cursor_col = self.cursor % self.width;
                 // draw a placeholder for the cursor
@@ -118,8 +117,7 @@ impl TextField {
                     // need to be sure we're writing to the correct cells
                     let line = char_idx as i32 / self.width;
                     let col = char_idx as i32 % self.width;
-                    if char_idx >= word_starts && char_idx < insertion_point + completion.len()
-                    {
+                    if char_idx >= word_starts && char_idx < insertion_point + completion.len() {
                         tb.change_cell(
                             pos_x + col,
                             pos_y + line,
@@ -137,7 +135,7 @@ impl TextField {
                         );
                     }
                 }
-                
+
                 tb.set_cursor(Some((
                     (pos_x + cursor_col) as u16,
                     (pos_y + cursor_line) as u16,
@@ -450,7 +448,7 @@ impl TextField {
     /// based on the width of the widget
     pub fn calculate_lines(&self) -> i32 {
         let len = self.current_buffer_len();
-        if len >= self.width {            
+        if len >= self.width {
             len / self.width + 1
         } else {
             1
@@ -558,7 +556,6 @@ fn draw_line(
     width: i32,
     cursor: i32,
 ) {
-
     let mut y = pos_y;
     let mut cursor_line = 0;
     let cursor_col = cursor % width;
@@ -582,7 +579,10 @@ fn draw_line(
         colors.cursor.bg,
     );
 
-    tb.set_cursor(Some(((pos_x + cursor_col) as u16, (pos_y + cursor_line) as u16)));
+    tb.set_cursor(Some((
+        (pos_x + cursor_col) as u16,
+        (pos_y + cursor_line) as u16,
+    )));
 }
 
 impl TextField {
