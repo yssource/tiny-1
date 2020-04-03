@@ -117,7 +117,10 @@ impl MessagingUI {
         let lines = self.input_field.calculate_lines();
         if lines > 1 {
             // make space for textfield expansion
-            self.msg_area.resize(self.width, self.height - lines)
+            self.msg_area.resize(self.width, self.height - lines);
+        } else {
+            // resize back to normal (after multiple lines of input)
+            self.msg_area.resize(self.width, self.height - 1);
         }
         self.msg_area.draw(tb, colors, pos_x, pos_y);
 
