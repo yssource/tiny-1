@@ -113,7 +113,12 @@ impl MessagingUI {
         }
     }
 
-    pub(crate) fn draw(&self, tb: &mut Termbox, colors: &Colors, pos_x: i32, pos_y: i32) {
+    pub(crate) fn draw(&mut self, tb: &mut Termbox, colors: &Colors, pos_x: i32, pos_y: i32) {
+        let lines = self.input_field.calculate_lines();
+        if lines > 1 {
+            // make space for textfield expansion
+            self.msg_area.resize(self.width, self.height - lines)
+        }
         self.msg_area.draw(tb, colors, pos_x, pos_y);
 
         if let Some(ref nick) = self.current_nick {
@@ -123,10 +128,10 @@ impl MessagingUI {
                     fg: u16::from(nick_color),
                     bg: colors.user_msg.bg,
                 };
-                termbox::print_chars(tb, pos_x, pos_y + self.height - 1, style, nick.chars());
+                termbox::print_chars(tb, pos_x, pos_y + self.height - lines, style, nick.chars());
                 tb.change_cell(
                     pos_x + nick.len() as i32,
-                    pos_y + self.height - 1,
+                    pos_y + self.height - lines,
                     ':',
                     colors.user_msg.fg,
                     colors.user_msg.bg,
@@ -135,13 +140,13 @@ impl MessagingUI {
                     tb,
                     colors,
                     pos_x + nick.len() as i32 + 2,
-                    pos_y + self.height - 1,
+                    pos_y + self.height - lines,
                 );
             } else {
-                self.draw_input_field(tb, colors, pos_x, pos_y + self.height - 1);
+                self.draw_input_field(tb, colors, pos_x, pos_y + self.height - lines);
             }
         } else {
-            self.draw_input_field(tb, colors, pos_x, pos_y + self.height - 1);
+            self.draw_input_field(tb, colors, pos_x, pos_y + self.height - lines);
         }
     }
 
