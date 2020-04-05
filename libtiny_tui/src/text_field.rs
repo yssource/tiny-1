@@ -9,6 +9,8 @@ use termbox_simple::Termbox;
 use crate::{config::Colors, termbox, trie::Trie, utils, widget::WidgetRet};
 
 // TODO: Make these settings
+const SCROLL_OFF: i32 = 5;
+const OVERFLOW_WIDTH: i32 = 30;
 const HIST_SIZE: usize = 30;
 
 pub(crate) struct TextField {
@@ -20,6 +22,15 @@ pub(crate) struct TextField {
 
     /// Width of the widget
     width: i32,
+
+    /// Max lines before turning into scroll mode
+    max_lines: i32,
+    /// Config value for text field wrapping
+    text_field_wrap: bool,
+    /// Whether or not scroll mode is currently on
+    scrolling_on: bool,
+    /// Amount of scroll in the input field
+    scroll: i32,
 
     /// A history of sent messages/commands. Once added messages are never
     /// modified. A modification attempt should result in a new buffer with a
@@ -47,18 +58,24 @@ enum Mode {
 }
 
 impl TextField {
-    pub(crate) fn new(width: i32) -> TextField {
+    pub(crate) fn new(width: i32, max_lines: i32, text_field_wrap: bool) -> TextField {
         TextField {
             buffer: Vec::with_capacity(512),
             cursor: 0,
             width,
+            max_lines,
+            text_field_wrap,
+            scrolling_on: !text_field_wrap,
+            scroll: 0,
             history: Vec::with_capacity(HIST_SIZE),
             mode: Mode::Edit,
         }
     }
 
-    pub(crate) fn resize(&mut self, width: i32) {
+    pub(crate) fn resize(&mut self, width: i32, max_lines: i32) {
         self.width = width;
+        self.max_lines = max_lines;
+        self.scrolling_on = should_scroll(!self.text_field_wrap, max_lines, width);
         let cursor = self.cursor;
         self.move_cursor(cursor);
     }
@@ -73,7 +90,10 @@ impl TextField {
                     pos_x,
                     pos_y,
                     self.width,
+                    self.max_lines,
                     self.cursor,
+                    self.scrolling_on,
+                    self.scroll,
                 );
             }
             Mode::History(hist_curs) => {
@@ -84,7 +104,10 @@ impl TextField {
                     pos_x,
                     pos_y,
                     self.width,
+                    self.max_lines,
                     self.cursor,
+                    self.scrolling_on,
+                    self.scroll,
                 );
             }
             Mode::Autocomplete {
@@ -94,12 +117,20 @@ impl TextField {
                 ref completions,
                 current_completion,
             } => {
-                let cursor_line = self.cursor / self.width;
-                let cursor_col = self.cursor % self.width;
+                let cursor_x_off;
+                let cursor_y_off;
+                if should_scroll(self.scrolling_on, self.max_lines, self.width) {
+                    cursor_x_off = self.cursor - self.scroll;
+                    cursor_y_off = 0;
+                } else {
+                    cursor_x_off = self.cursor % self.width;
+                    cursor_y_off = self.cursor / self.width;
+                }
+
                 // draw a placeholder for the cursor
                 tb.change_cell(
-                    pos_x + cursor_col,
-                    pos_y + cursor_line,
+                    pos_x + cursor_x_off,
+                    pos_y + cursor_y_off,
                     ' ',
                     colors.user_msg.fg,
                     colors.user_msg.bg,
@@ -114,31 +145,47 @@ impl TextField {
                     utils::insert_iter(&mut orig_buf_iter, &mut completion_iter, insertion_point);
 
                 for (char_idx, char) in iter.enumerate() {
-                    // need to be sure we're writing to the correct cells
-                    let line = char_idx as i32 / self.width;
-                    let col = char_idx as i32 % self.width;
-                    if char_idx >= word_starts && char_idx < insertion_point + completion.len() {
-                        tb.change_cell(
-                            pos_x + col,
-                            pos_y + line,
-                            char,
-                            colors.completion.fg,
-                            colors.completion.bg,
-                        );
+                    let x_off;
+                    let y_off;
+                    let mut can_scroll = true;
+                    if should_scroll(self.scrolling_on, self.max_lines, self.width) {
+                        x_off = (char_idx as i32) - self.scroll;
+                        y_off = 0;
+                        if char_idx >= ((self.scroll + self.width) as usize) {
+                            break;
+                        }
+                        if char_idx < self.scroll as usize {
+                            can_scroll = false
+                        }
                     } else {
-                        tb.change_cell(
-                            pos_x + col,
-                            pos_y + line,
-                            char,
-                            colors.user_msg.fg,
-                            colors.user_msg.bg,
-                        );
+                        x_off = char_idx as i32 % self.width;
+                        y_off = char_idx as i32 / self.width;
+                    }
+                    if can_scroll {
+                        if char_idx >= word_starts && char_idx < insertion_point + completion.len()
+                        {
+                            tb.change_cell(
+                                pos_x + x_off,
+                                pos_y + y_off,
+                                char,
+                                colors.completion.fg,
+                                colors.completion.bg,
+                            );
+                        } else {
+                            tb.change_cell(
+                                pos_x + x_off,
+                                pos_y + y_off,
+                                char,
+                                colors.user_msg.fg,
+                                colors.user_msg.bg,
+                            );
+                        }
                     }
                 }
 
                 tb.set_cursor(Some((
-                    (pos_x + cursor_col) as u16,
-                    (pos_y + cursor_line) as u16,
+                    (pos_x + cursor_x_off) as u16,
+                    (pos_y + cursor_y_off) as u16,
                 )));
             }
         }
@@ -447,9 +494,13 @@ impl TextField {
     /// Calculate how many lines of text will be in the textfield
     /// based on the width of the widget
     pub fn calculate_lines(&self) -> i32 {
-        let len = self.current_buffer_len();
-        if len >= self.width {
-            len / self.width + 1
+        if !self.scrolling_on {
+            let len = self.current_buffer_len();
+            if len >= self.width {
+                len / self.width + 1
+            } else {
+                1
+            }
         } else {
             1
         }
@@ -544,7 +595,68 @@ impl TextField {
     fn move_cursor(&mut self, cursor: i32) {
         assert!(cursor >= 0 && cursor <= self.current_buffer_len());
         self.cursor = cursor;
+
+        if self.scrolling_on {
+            if self.current_buffer_len() + 1 >= self.width {
+                let scrolloff = {
+                    if self.width < 2 * SCROLL_OFF + 1 {
+                        0
+                    } else {
+                        SCROLL_OFF
+                    }
+                };
+
+                let left_end = self.scroll;
+                let right_end = self.scroll + self.width;
+
+                if cursor - scrolloff < left_end {
+                    self.scroll = max(0, cursor - scrolloff);
+                } else if cursor + scrolloff >= right_end {
+                    self.scroll = min(
+                        // +1 because cursor should be visible, i.e.
+                        // right_end > cursor should hold after this
+                        max(0, cursor + 1 + scrolloff - self.width),
+                        // +1 because cursor goes one more character
+                        // after the buffer, to be able to add chars
+                        max(0, self.current_buffer_len() + 1 - self.width),
+                    );
+                }
+            } else {
+                self.scroll = 0;
+            }
+        }
     }
+}
+
+fn should_scroll(scrolling_on: bool, max_lines: i32, width: i32) -> bool {
+    scrolling_on || max_lines == 1 || width <= OVERFLOW_WIDTH
+}
+
+fn draw_line_scroll(
+    tb: &mut Termbox,
+    colors: &Colors,
+    line: &[char],
+    pos_x: i32,
+    pos_y: i32,
+    width: i32,
+    cursor: i32,
+    scroll: i32,
+) {
+    let slice: &[char] = &line[scroll as usize..min(line.len(), (scroll + width) as usize)];
+    termbox::print_chars(tb, pos_x, pos_y, colors.user_msg, slice.iter().cloned());
+    // On my terminal the cursor is only shown when there's a character
+    // under it.
+    if cursor as usize >= line.len() {
+        tb.change_cell(
+            pos_x + cursor - scroll,
+            pos_y,
+            ' ',
+            colors.cursor.fg,
+            colors.cursor.bg,
+        );
+    }
+
+    tb.set_cursor(Some(((pos_x + cursor - scroll) as u16, pos_y as u16)));
 }
 
 fn draw_line(
@@ -554,35 +666,43 @@ fn draw_line(
     pos_x: i32,
     pos_y: i32,
     width: i32,
+    max_lines: i32,
     cursor: i32,
+    scrolling_on: bool,
+    scroll: i32,
 ) {
-    let mut y = pos_y;
-    let mut cursor_line = 0;
-    let cursor_col = cursor % width;
-    // handle vertical expansion for text overflow
-    if line.len() >= width as usize {
-        cursor_line = cursor / width;
-        let chunked = line.chunks(width as usize);
-        for l in chunked.into_iter() {
-            termbox::print_chars(tb, pos_x, y, colors.user_msg, l.iter().cloned());
-            y += 1;
-        }
+    if should_scroll(scrolling_on, max_lines, width) {
+        draw_line_scroll(tb, colors, line, pos_x, pos_y, width, cursor, scroll);
     } else {
-        termbox::print_chars(tb, pos_x, pos_y, colors.user_msg, line.iter().cloned());
+        // --- vert overflow ---
+        let mut y = pos_y;
+        let mut cursor_line = 0;
+        let cursor_col = cursor % width;
+        // handle vertical expansion for text overflow
+        if line.len() >= width as usize {
+            cursor_line = cursor / width;
+            let chunked = line.chunks(width as usize);
+            for l in chunked.into_iter() {
+                termbox::print_chars(tb, pos_x, y, colors.user_msg, l.iter().cloned());
+                y += 1;
+            }
+        } else {
+            termbox::print_chars(tb, pos_x, pos_y, colors.user_msg, line.iter().cloned());
+        }
+
+        tb.change_cell(
+            pos_x + cursor_col,
+            pos_y + cursor_line,
+            ' ',
+            colors.cursor.fg,
+            colors.cursor.bg,
+        );
+
+        tb.set_cursor(Some((
+            (pos_x + cursor_col) as u16,
+            (pos_y + cursor_line) as u16,
+        )));
     }
-
-    tb.change_cell(
-        pos_x + cursor_col,
-        pos_y + cursor_line,
-        ' ',
-        colors.cursor.fg,
-        colors.cursor.bg,
-    );
-
-    tb.set_cursor(Some((
-        (pos_x + cursor_col) as u16,
-        (pos_y + cursor_line) as u16,
-    )));
 }
 
 impl TextField {
@@ -645,7 +765,7 @@ mod tests {
 
     #[test]
     fn text_field_bug() {
-        let mut text_field = TextField::new(10);
+        let mut text_field = TextField::new(10, 10, false);
         text_field.keypressed(Key::Char('a'));
         text_field.keypressed(Key::Char(' '));
         text_field.keypressed(Key::Char('b'));
