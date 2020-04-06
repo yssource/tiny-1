@@ -10,7 +10,7 @@ use crate::{config::Colors, termbox, trie::Trie, utils, widget::WidgetRet};
 
 // TODO: Make these settings
 const SCROLL_OFF: i32 = 5;
-const OVERFLOW_WIDTH: i32 = 30;
+const OVERFLOW_WIDTH: i32 = 36;
 const HIST_SIZE: usize = 30;
 
 pub(crate) struct TextField {
@@ -25,12 +25,12 @@ pub(crate) struct TextField {
 
     /// Max lines before turning into scroll mode
     max_lines: i32,
+
     /// Config value for text field wrapping
     text_field_wrap: bool,
-    /// Whether or not scroll mode is currently on
-    scrolling_on: bool,
+
     /// Amount of scroll in the input field
-    scroll: i32,
+    scroll: Option<i32>,
 
     /// A history of sent messages/commands. Once added messages are never
     /// modified. A modification attempt should result in a new buffer with a
@@ -65,8 +65,7 @@ impl TextField {
             width,
             max_lines,
             text_field_wrap,
-            scrolling_on: !text_field_wrap,
-            scroll: 0,
+            scroll: if text_field_wrap { None } else { Some(0) },
             history: Vec::with_capacity(HIST_SIZE),
             mode: Mode::Edit,
         }
@@ -75,7 +74,7 @@ impl TextField {
     pub(crate) fn resize(&mut self, width: i32, max_lines: i32) {
         self.width = width;
         self.max_lines = max_lines;
-        self.scrolling_on = should_scroll(!self.text_field_wrap, max_lines, width);
+        self.scroll = self.get_scroll_for_resize();
         let cursor = self.cursor;
         self.move_cursor(cursor);
     }
@@ -90,9 +89,8 @@ impl TextField {
                     pos_x,
                     pos_y,
                     self.width,
-                    self.max_lines,
                     self.cursor,
-                    self.scrolling_on,
+                    self.should_scroll(),
                     self.scroll,
                 );
             }
@@ -104,9 +102,8 @@ impl TextField {
                     pos_x,
                     pos_y,
                     self.width,
-                    self.max_lines,
                     self.cursor,
-                    self.scrolling_on,
+                    self.should_scroll(),
                     self.scroll,
                 );
             }
@@ -119,8 +116,8 @@ impl TextField {
             } => {
                 let cursor_x_off;
                 let cursor_y_off;
-                if should_scroll(self.scrolling_on, self.max_lines, self.width) {
-                    cursor_x_off = self.cursor - self.scroll;
+                if self.should_scroll() {
+                    cursor_x_off = self.cursor - self.scroll.unwrap();
                     cursor_y_off = 0;
                 } else {
                     cursor_x_off = self.cursor % self.width;
@@ -148,13 +145,14 @@ impl TextField {
                     let x_off;
                     let y_off;
                     let mut can_scroll = true;
-                    if should_scroll(self.scrolling_on, self.max_lines, self.width) {
-                        x_off = (char_idx as i32) - self.scroll;
+                    if self.should_scroll() {
+                        let scroll = self.scroll.unwrap_or(0);
+                        x_off = (char_idx as i32) - scroll;
                         y_off = 0;
-                        if char_idx >= ((self.scroll + self.width) as usize) {
+                        if char_idx >= ((scroll + self.width) as usize) {
                             break;
                         }
-                        if char_idx < self.scroll as usize {
+                        if char_idx < scroll as usize {
                             can_scroll = false
                         }
                     } else {
@@ -494,7 +492,7 @@ impl TextField {
     /// Calculate how many lines of text will be in the textfield
     /// based on the width of the widget
     pub fn calculate_lines(&self) -> i32 {
-        if !self.scrolling_on {
+        if !self.scroll.is_some() {
             let len = self.current_buffer_len();
             if len >= self.width {
                 len / self.width + 1
@@ -596,7 +594,7 @@ impl TextField {
         assert!(cursor >= 0 && cursor <= self.current_buffer_len());
         self.cursor = cursor;
 
-        if self.scrolling_on {
+        if self.scroll.is_some() {
             if self.current_buffer_len() + 1 >= self.width {
                 let scrolloff = {
                     if self.width < 2 * SCROLL_OFF + 1 {
@@ -606,13 +604,13 @@ impl TextField {
                     }
                 };
 
-                let left_end = self.scroll;
-                let right_end = self.scroll + self.width;
+                let left_end = self.scroll.unwrap();
+                let right_end = self.scroll.unwrap() + self.width;
 
                 if cursor - scrolloff < left_end {
-                    self.scroll = max(0, cursor - scrolloff);
+                    self.scroll = Some(max(0, cursor - scrolloff));
                 } else if cursor + scrolloff >= right_end {
-                    self.scroll = min(
+                    let scroll = min(
                         // +1 because cursor should be visible, i.e.
                         // right_end > cursor should hold after this
                         max(0, cursor + 1 + scrolloff - self.width),
@@ -620,16 +618,13 @@ impl TextField {
                         // after the buffer, to be able to add chars
                         max(0, self.current_buffer_len() + 1 - self.width),
                     );
+                    self.scroll = Some(scroll);
                 }
             } else {
-                self.scroll = 0;
+                self.scroll = Some(0);
             }
         }
     }
-}
-
-fn should_scroll(scrolling_on: bool, max_lines: i32, width: i32) -> bool {
-    scrolling_on || max_lines == 1 || width <= OVERFLOW_WIDTH
 }
 
 fn draw_line_scroll(
@@ -666,13 +661,21 @@ fn draw_line(
     pos_x: i32,
     pos_y: i32,
     width: i32,
-    max_lines: i32,
     cursor: i32,
-    scrolling_on: bool,
-    scroll: i32,
+    should_scroll: bool,
+    scroll: Option<i32>,
 ) {
-    if should_scroll(scrolling_on, max_lines, width) {
-        draw_line_scroll(tb, colors, line, pos_x, pos_y, width, cursor, scroll);
+    if should_scroll {
+        draw_line_scroll(
+            tb,
+            colors,
+            line,
+            pos_x,
+            pos_y,
+            width,
+            cursor,
+            scroll.unwrap_or(0),
+        );
     } else {
         // --- vert overflow ---
         let mut y = pos_y;
@@ -751,6 +754,18 @@ impl TextField {
             };
             let cursor = self.cursor;
             self.move_cursor(cursor + completion_len as i32);
+        }
+    }
+
+    fn should_scroll(&self) -> bool {
+        self.scroll.is_some()
+    }
+
+    fn get_scroll_for_resize(&self) -> Option<i32> {
+        if !self.text_field_wrap || self.max_lines == 1 || self.width <= OVERFLOW_WIDTH {
+            self.scroll.or(Some(0))
+        } else {
+            None
         }
     }
 }

@@ -14,7 +14,7 @@ pub use termbox_simple::*;
 pub(crate) struct Config {
     #[serde(default)]
     pub(crate) colors: Colors,
-    #[serde(default = "text_field_wrap_default")]
+    #[serde(default)]
     pub(crate) text_field_wrap: bool,
 }
 
@@ -165,10 +165,6 @@ fn parse_attr(val: String) -> u16 {
         }
     }
     0
-}
-
-fn text_field_wrap_default() -> bool {
-    false
 }
 
 impl<'de> Deserialize<'de> for Style {

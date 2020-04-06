@@ -177,8 +177,101 @@ fn small_screen_2() {
 ///
 #[test]
 fn test_text_field_wrap() {
-    let mut tui = TUI::new_test(60, 30);
+    let mut tui = TUI::new_test(60, 8);
     tui.set_text_field_wrap_test(true);
+
+    let server = "chat.freenode.net";
+    tui.new_server_tab(server);
+    tui.set_nick(server, "osa1");
+
+    // switch to server tab
+    tui.next_tab();
+
+    // write some stuff
+    let target = MsgTarget::CurrentTab;
+    let ts: Tm = unsafe { ::std::mem::zeroed() };
+    tui.add_msg("test test test", ts, &target);
+
+    for _ in 0..65 {
+        let event = term_input::Event::Key(Key::Char('a'));
+        tui.handle_input_event(event);
+    }
+
+    tui.draw();
+
+    #[rustfmt::skip]
+    let screen = 
+    "|                                                            |
+     |                                                            |
+     |                                                            |
+     |                                                            |
+     |00:00 test test test                                        |
+     |osa1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+     |      aaaaaaaaaaa                                           |
+     |mentions chat.freenode.net                                  |";
+
+    expect_screen(screen, &tui, 60, 8);
+}
+
+///
+/// Tests text wrap on
+/// Writes some text that will wrap
+/// Deletes the text to check if the input field went back to 1 line
+///
+#[test]
+fn test_text_field_wrap_add_delete() {
+    let mut tui = TUI::new_test(60, 8);
+    tui.set_text_field_wrap_test(true);
+
+    let server = "chat.freenode.net";
+    tui.new_server_tab(server);
+    tui.set_nick(server, "osa1");
+
+    // switch to server tab
+    tui.next_tab();
+
+    // write some stuff
+    let target = MsgTarget::CurrentTab;
+    let ts: Tm = unsafe { ::std::mem::zeroed() };
+    tui.add_msg("test test test", ts, &target);
+
+    for _ in 0..65 {
+        let event = term_input::Event::Key(Key::Char('a'));
+        tui.handle_input_event(event);
+    }
+
+    tui.draw();
+
+    // Hit ctrl-a to go to the beginning of line
+    let ctrl_a_event = term_input::Event::Key(Key::Ctrl('a'));
+    tui.handle_input_event(ctrl_a_event);
+    // Hit ctrl-k to clear the line
+    let ctrl_k_event = term_input::Event::Key(Key::Ctrl('k'));
+    tui.handle_input_event(ctrl_k_event);
+
+    tui.draw();
+
+    #[rustfmt::skip]
+    let screen = 
+    "|                                                            |
+     |                                                            |
+     |                                                            |
+     |                                                            |
+     |                                                            |
+     |00:00 test test test                                        |
+     |osa1:                                                       |
+     |mentions chat.freenode.net                                  |";
+
+    expect_screen(screen, &tui, 60, 8);
+}
+
+///
+/// Tests scroll mode on (text wrap off)
+///
+#[test]
+fn test_text_field_wrap_false() {
+    let mut tui = TUI::new_test(60, 8);
+    tui.set_text_field_wrap_test(false);
 
     let server = "chat.freenode.net";
     tui.new_server_tab(server);
@@ -201,87 +294,10 @@ fn test_text_field_wrap() {
      |                                                            |
      |                                                            |
      |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |osa1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
-     |      aaaaaaaaaaa                                           |
-     |mentions chat.freenode.net                                  |";
-
-    expect_screen(screen, &tui, 60, 30);
-}
-
-///
-/// Tests scroll mode on (text wrap off)
-///
-#[test]
-fn test_text_field_wrap_false() {
-    let mut tui = TUI::new_test(60, 30);
-    tui.set_text_field_wrap_test(false);
-
-    let server = "chat.freenode.net";
-    tui.new_server_tab(server);
-    tui.set_nick(server, "osa1");
-    // switch to server tab
-    tui.next_tab();
-
-    for _ in 0..65 {
-        let event = term_input::Event::Key(Key::Char('a'));
-        tui.handle_input_event(event);
-    }
-
-    tui.draw();
-
-    let screen = "|                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
-     |                                                            |
      |osa1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa |
      |mentions chat.freenode.net                                  |";
     //                                               cursor space^
-    expect_screen(screen, &tui, 60, 30);
+    expect_screen(screen, &tui, 60, 8);
 }
 
 ///
@@ -304,8 +320,9 @@ fn test_scroll_text_field_wrap_true() {
     }
 
     tui.draw();
-
-    let screen = "|                              |
+    #[rustfmt::skip]
+    let screen = 
+    "|                              |
      |                              |
      |                              |
      |                              |
