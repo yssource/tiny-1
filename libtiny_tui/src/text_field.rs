@@ -10,7 +10,11 @@ use crate::{config::Colors, termbox, trie::Trie, utils, widget::WidgetRet};
 
 // TODO: Make these settings
 const SCROLL_OFF: i32 = 5;
-const OVERFLOW_WIDTH: i32 = 36;
+
+/// Minimum width of TextField for wrapping
+const SCROLL_FALLBACK_WIDTH: i32 = 36;
+
+/// Input history size
 const HIST_SIZE: usize = 30;
 
 pub(crate) struct TextField {
@@ -491,7 +495,7 @@ impl TextField {
 
     /// Calculate how many lines of text will be in the textfield
     /// based on the width of the widget
-    pub fn calculate_lines(&self) -> i32 {
+    pub(crate) fn calculate_lines(&self) -> i32 {
         if !self.scroll.is_some() {
             let len = self.current_buffer_len();
             if len >= self.width {
@@ -606,6 +610,10 @@ impl TextField {
 
                 let left_end = self.scroll.unwrap();
                 let right_end = self.scroll.unwrap() + self.width;
+                eprintln!(
+                    "left end {} right end {} cursor {} ",
+                    left_end, right_end, cursor
+                );
 
                 if cursor - scrolloff < left_end {
                     self.scroll = Some(max(0, cursor - scrolloff));
@@ -762,7 +770,7 @@ impl TextField {
     }
 
     fn get_scroll_for_resize(&self) -> Option<i32> {
-        if !self.text_field_wrap || self.max_lines == 1 || self.width <= OVERFLOW_WIDTH {
+        if !self.text_field_wrap || self.max_lines == 1 || self.width <= SCROLL_FALLBACK_WIDTH {
             self.scroll.or(Some(0))
         } else {
             None
