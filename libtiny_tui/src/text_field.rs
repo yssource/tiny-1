@@ -610,10 +610,6 @@ impl TextField {
 
                 let left_end = self.scroll.unwrap();
                 let right_end = self.scroll.unwrap() + self.width;
-                eprintln!(
-                    "left end {} right end {} cursor {} ",
-                    left_end, right_end, cursor
-                );
 
                 if cursor - scrolloff < left_end {
                     self.scroll = Some(max(0, cursor - scrolloff));
