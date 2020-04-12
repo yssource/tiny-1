@@ -106,16 +106,8 @@ impl MessagingUI {
         self.current_nick.as_deref()
     }
 
-    fn draw_input_field(&self, tb: &mut Termbox, colors: &Colors, pos_x: i32, pos_y: i32) {
-        match self.exit_dialogue {
-            Some(ref exit_dialogue) => exit_dialogue.draw(tb, colors, pos_x, pos_y),
-            None => self.input_field.draw(tb, colors, pos_x, pos_y),
-        }
-    }
-
     pub(crate) fn draw(&mut self, tb: &mut Termbox, colors: &Colors, pos_x: i32, pos_y: i32) {
         let lines = self.input_field.calculate_lines();
-
         // make space for textfield expansion
         if self.height - lines >= 5 {
             self.msg_area.resize(self.width, self.height - lines);
@@ -123,35 +115,42 @@ impl MessagingUI {
             let widget_width = self.calculate_input_field_width(self.width);
             self.input_field.resize(widget_width, 1);
         }
-
         self.msg_area.draw(tb, colors, pos_x, pos_y);
 
-        if let Some(ref nick) = self.current_nick {
-            if self.show_current_nick {
-                let nick_color = colors.nick[self.get_nick_color(nick) % colors.nick.len()];
-                let style = Style {
-                    fg: u16::from(nick_color),
-                    bg: colors.user_msg.bg,
-                };
-                termbox::print_chars(tb, pos_x, pos_y + self.height - lines, style, nick.chars());
-                tb.change_cell(
-                    pos_x + nick.len() as i32,
-                    pos_y + self.height - lines,
-                    ':',
-                    colors.user_msg.fg,
-                    colors.user_msg.bg,
-                );
-                self.draw_input_field(
-                    tb,
-                    colors,
-                    pos_x + nick.len() as i32 + 2,
-                    pos_y + self.height - lines,
-                );
-            } else {
-                self.draw_input_field(tb, colors, pos_x, pos_y + self.height - lines);
+        let input_field_y = pos_y + self.height - lines;
+        match &self.exit_dialogue {
+            Some(exit_dialogue) => {
+                exit_dialogue.draw(tb, colors, pos_x, input_field_y);
             }
-        } else {
-            self.draw_input_field(tb, colors, pos_x, pos_y + self.height - lines);
+            None => {
+                if let Some(ref nick) = self.current_nick {
+                    if self.show_current_nick {
+                        let nick_color = colors.nick[self.get_nick_color(nick) % colors.nick.len()];
+                        let style = Style {
+                            fg: u16::from(nick_color),
+                            bg: colors.user_msg.bg,
+                        };
+                        termbox::print_chars(tb, pos_x, input_field_y, style, nick.chars());
+                        tb.change_cell(
+                            pos_x + nick.len() as i32,
+                            input_field_y,
+                            ':',
+                            colors.user_msg.fg,
+                            colors.user_msg.bg,
+                        );
+                        self.input_field.draw(
+                            tb,
+                            colors,
+                            pos_x + nick.len() as i32 + 2,
+                            input_field_y,
+                        );
+                    } else {
+                        self.input_field.draw(tb, colors, pos_x, input_field_y);
+                    }
+                } else {
+                    self.input_field.draw(tb, colors, pos_x, input_field_y);
+                }
+            }
         }
     }
 
@@ -244,8 +243,10 @@ impl MessagingUI {
         let widget_width = self.calculate_input_field_width(width);
 
         self.input_field.resize(widget_width, height - 1);
+
+        // We don't show the nick in exit dialogue, so it has the full width
         for exit_dialogue in &mut self.exit_dialogue {
-            exit_dialogue.resize(widget_width);
+            exit_dialogue.resize(width);
         }
     }
 
@@ -267,6 +268,7 @@ impl MessagingUI {
     fn toggle_exit_dialogue(&mut self) {
         let exit_dialogue = ::std::mem::replace(&mut self.exit_dialogue, None);
         if exit_dialogue.is_none() {
+            // We don't show the nick in exit dialogue, so it has the full width
             self.exit_dialogue = Some(ExitDialogue::new(self.width));
         }
     }
