@@ -334,6 +334,7 @@ pub(crate) fn draw_line(
 #[cfg(test)]
 mod tests {
     use super::InputLine;
+
     #[test]
     fn test_calculate_height() {
         let buffer: Vec<char> = String::from("012345").chars().collect();
@@ -386,5 +387,128 @@ mod tests {
         // " 12 "
         // "34"
         assert_eq!(line.calculate_height(4, 0), 5);
+    }
+}
+
+#[cfg(test)]
+mod prop_tests {
+
+    use quickcheck::{Arbitrary, Gen, QuickCheck};
+
+    use super::*;
+
+    const INITIAL_STR_LEN: usize = 20;
+
+    fn make_test_string() -> String {
+        let mut s = String::with_capacity(INITIAL_STR_LEN);
+        for i in 0..INITIAL_STR_LEN {
+            s.push(char::from(b'a' + (i % 25) as u8));
+        }
+        s
+    }
+
+    #[derive(Debug, Clone)]
+    enum Action {
+        Insert(char, u32),
+        Remove(u32),
+        RemoveEnd,
+        InsertEnd(char),
+    }
+
+    #[derive(Debug, Clone)]
+    struct Actions(Vec<Action>);
+
+    fn make_char(i: u32) -> char {
+        let i = i % 26;
+        if i == 25 {
+            ' '
+        } else {
+            char::from(b'a' + i as u8)
+        }
+    }
+
+    impl Arbitrary for Actions {
+        fn arbitrary<G: Gen>(g: &mut G) -> Self {
+            let len = g.next_u32() % 1000;
+            let mut vec: Vec<Action> = Vec::with_capacity(len as usize);
+
+            let mut current_str_len = INITIAL_STR_LEN as u32;
+            for _ in 0..len {
+                let action_ty = g.next_u32() % 4;
+                match action_ty {
+                    0 => {
+                        let insert_char = make_char(g.next_u32());
+                        let insert_idx = if current_str_len == 0 {
+                            0
+                        } else {
+                            g.next_u32() % current_str_len
+                        };
+                        vec.push(Action::Insert(insert_char, insert_idx));
+                        current_str_len += 1;
+                    }
+                    1 if current_str_len != 0 => {
+                        let remove_idx = g.next_u32() % current_str_len;
+                        vec.push(Action::Remove(remove_idx));
+                        current_str_len -= 1;
+                    }
+                    2 if current_str_len != 0 => {
+                        vec.push(Action::RemoveEnd);
+                        if current_str_len > 0 {
+                            current_str_len -= 1;
+                        }
+                    }
+                    _ => {
+                        let char = make_char(g.next_u32());
+                        vec.push(Action::InsertEnd(char));
+                        current_str_len += 1;
+                    }
+                }
+            }
+
+            Actions(vec)
+        }
+    }
+
+    fn check_updates(actions: Actions) {
+        let mut s = make_test_string();
+        let mut input = InputLine::from_buffer(s.chars().collect());
+
+        // println!("{:?}", actions.0);
+
+        for action in actions.0 {
+            match action {
+                Action::Insert(char, idx) => {
+                    input.insert(idx as usize, char);
+                    unsafe { s.as_mut_vec().insert(idx as usize, char as u8) };
+                }
+                Action::Remove(idx) => {
+                    input.remove(idx as usize);
+                    unsafe { s.as_mut_vec().remove(idx as usize) };
+                }
+                Action::InsertEnd(char) => {
+                    input.insert(input.len(), char);
+                    s.push(char);
+                }
+                Action::RemoveEnd => {
+                    input.remove(input.len() - 1);
+                    s.pop();
+                }
+            }
+
+            let s_chars: Vec<char> = s.chars().collect();
+            // Check that the input buffer contents is right
+            assert_eq!(input.get_buffer(), s_chars.as_slice());
+            // Check that invalidating height value and updating is right
+            assert_eq!(
+                input.calculate_height(20, 0),
+                InputLine::from_buffer(s.chars().collect()).calculate_height(20, 0)
+            );
+        }
+    }
+
+    #[test]
+    fn test_updates() {
+        let mut qc = QuickCheck::new().tests(10000);
+        qc.quickcheck(check_updates as fn(Actions));
     }
 }
