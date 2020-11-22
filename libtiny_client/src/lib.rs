@@ -154,6 +154,14 @@ impl Client {
         self.state.get_nick()
     }
 
+    pub fn is_current_nick(&self, nick: &str) -> bool {
+        self.state.is_current_nick(nick)
+    }
+
+    pub fn nick_len(&self) -> usize {
+        self.state.nick_len()
+    }
+
     /// Is current nick accepted by the server?
     // TODO: Do we really need this?
     pub fn is_nick_accepted(&self) -> bool {
@@ -181,7 +189,7 @@ impl Client {
         let mut max = 512; // RFC 2812
         max -= 3; // :, !, @
         max -= 13; // " PRIVMSG ", " ", :, \r, \n
-        max -= self.get_nick().len();
+        max -= self.nick_len();
         max -= extra_len;
         match self.state.get_usermask() {
             None => {

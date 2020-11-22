@@ -195,14 +195,14 @@ fn handle_irc_msg(ui: &dyn UI, client: &Client, msg: wire::Msg) {
                         Server(_) => {
                             let msg_target = MsgTarget::Server { serv };
                             ui.add_privmsg(serv, &msg, ts, &msg_target, false, is_action);
-                            if target == client.get_nick() {
+                            if client.is_current_nick(&target) {
                                 ui.set_tab_style(TabStyle::Highlight, &msg_target);
                             } else {
                                 ui.set_tab_style(TabStyle::NewMsg, &msg_target);
                             }
                         }
                         User { ref nick, .. } | Ambiguous(ref nick) => {
-                            if target == client.get_nick() {
+                            if client.is_current_nick(&target) {
                                 // Message is sent to us. Show NOTICE messages in server tabs if we
                                 // don't have a tab for the sender already (see #21).
                                 let msg_target = if is_notice && !ui.user_tab_exists(serv, nick) {
@@ -229,7 +229,7 @@ fn handle_irc_msg(ui: &dyn UI, client: &Client, msg: wire::Msg) {
                                             );
                                         }
                                         User { ref nick, .. } | Ambiguous(ref nick) => {
-                                            if *nick != client.get_nick() {
+                                            if !client.is_current_nick(nick) {
                                                 warn!(
                                                     "PRIVMSG sender or target is not us: {:?}",
                                                     msg
@@ -274,7 +274,7 @@ fn handle_irc_msg(ui: &dyn UI, client: &Client, msg: wire::Msg) {
                 }
             };
 
-            if nick == client.get_nick() {
+            if client.is_current_nick(&nick) {
                 ui.new_chan_tab(serv, &chan);
             } else {
                 let nick = wire::drop_nick_prefix(&nick);
@@ -301,7 +301,7 @@ fn handle_irc_msg(ui: &dyn UI, client: &Client, msg: wire::Msg) {
                     return;
                 }
             };
-            if nick != client.get_nick() {
+            if !client.is_current_nick(&nick) {
                 ui.remove_nick(
                     &nick,
                     Some(time::now()),

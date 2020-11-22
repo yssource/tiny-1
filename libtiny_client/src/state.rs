@@ -51,7 +51,14 @@ impl State {
         self.inner.borrow().current_nick.clone()
     }
 
-    // FIXME: Maybe use RwLock instead of Mutex
+    pub(crate) fn is_current_nick(&self, nick: &str) -> bool {
+        self.inner.borrow().current_nick == nick
+    }
+
+    pub(crate) fn nick_len(&self) -> usize {
+        self.inner.borrow().current_nick.len() // per RFC, assume ASCII
+    }
+
     pub(crate) fn is_nick_accepted(&self) -> bool {
         self.inner.borrow().nick_accepted
     }
